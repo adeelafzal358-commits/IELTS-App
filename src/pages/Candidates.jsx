@@ -15,6 +15,8 @@ export default function Candidates() {
     test_date: "",
     venue: ""
   });
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("All");
 
   useEffect(() => {
     fetchCandidates();
@@ -29,6 +31,15 @@ export default function Candidates() {
     }
     setLoading(false);
   };
+
+  const filteredCandidates = candidates.filter((c) => {
+    const matchesSearch =
+      c.candidate_name.toLowerCase().includes(search.toLowerCase()) ||
+      c.email.toLowerCase().includes(search.toLowerCase()) ||
+      c.cnic.includes(search);
+    const matchesType = filterType === "All" || c.test_type === filterType;
+    return matchesSearch && matchesType;
+  });
 
   const handleSubmit = async () => {
     try {
@@ -62,6 +73,24 @@ export default function Candidates() {
         </button>
       </div>
 
+      <div style={styles.searchBar}>
+        <input
+          style={styles.searchInput}
+          placeholder="🔍 Search by name, email, or CNIC..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          style={styles.filterSelect}
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+        >
+          <option value="All">All Types</option>
+          <option value="IELTS Academic">IELTS Academic</option>
+          <option value="IELTS General Training">IELTS General Training</option>
+        </select>
+      </div>
+
       {showForm && (
         <div style={styles.form}>
           <h3>Add New Candidate</h3>
@@ -82,6 +111,8 @@ export default function Candidates() {
         </div>
       )}
 
+      <p style={styles.count}>Showing {filteredCandidates.length} of {candidates.length} candidates</p>
+
       <table style={styles.table}>
         <thead>
           <tr style={styles.thead}>
@@ -95,7 +126,7 @@ export default function Candidates() {
           </tr>
         </thead>
         <tbody>
-          {candidates.map((c) => (
+          {filteredCandidates.map((c) => (
             <tr key={c._id} style={styles.row}>
               <td>{c.candidate_name}</td>
               <td>{c.email}</td>
@@ -110,6 +141,10 @@ export default function Candidates() {
           ))}
         </tbody>
       </table>
+
+      {filteredCandidates.length === 0 && (
+        <p style={styles.noResults}>No candidates found matching your search.</p>
+      )}
     </div>
   );
 }
@@ -117,6 +152,10 @@ export default function Candidates() {
 const styles = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" },
   addBtn: { padding: "10px 20px", backgroundColor: "#1a1a2e", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" },
+  searchBar: { display: "flex", gap: "10px", marginBottom: "20px" },
+  searchInput: { flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #ddd", fontSize: "14px" },
+  filterSelect: { padding: "10px", borderRadius: "6px", border: "1px solid #ddd", fontSize: "14px" },
+  count: { color: "#666", fontSize: "14px", marginBottom: "10px" },
   form: { backgroundColor: "white", padding: "20px", borderRadius: "10px", marginBottom: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" },
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "15px" },
   input: { padding: "10px", borderRadius: "6px", border: "1px solid #ddd", fontSize: "14px" },
@@ -124,4 +163,5 @@ const styles = {
   thead: { backgroundColor: "#1a1a2e", color: "white" },
   row: { borderBottom: "1px solid #eee" },
   deleteBtn: { padding: "6px 12px", backgroundColor: "#e74c3c", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" },
+  noResults: { textAlign: "center", color: "#999", padding: "20px" },
 };

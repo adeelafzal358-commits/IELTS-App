@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
 export default function Tests() {
+  const navigate = useNavigate();
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -27,12 +30,17 @@ export default function Tests() {
   };
 
   const handleSubmit = async () => {
+    if (!form.title) {
+      alert("Test title is required");
+      return;
+    }
     try {
       await API.post("/tests", form);
       setShowForm(false);
       setForm({ title: "", description: "", level: "Beginner", duration: 60 });
       fetchTests();
     } catch (err) {
+      console.log(err);
       alert("Error creating test");
     }
   };
@@ -60,18 +68,43 @@ export default function Tests() {
 
       {showForm && (
         <div style={styles.form}>
-          <h3>Add New Test</h3>
+          <h3>Create New Test</h3>
           <div style={styles.grid}>
-            <input style={styles.input} placeholder="Test Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <input style={styles.input} placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <select style={styles.input} value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>
+            <input
+              style={styles.input}
+              placeholder="Test Title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+            <input
+              style={styles.input}
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+            <select
+              style={styles.input}
+              value={form.level}
+              onChange={(e) => setForm({ ...form, level: e.target.value })}
+            >
               <option>Beginner</option>
               <option>Intermediate</option>
               <option>Advanced</option>
             </select>
-            <input style={styles.input} type="number" placeholder="Duration (minutes)" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} />
+            <input
+              style={styles.input}
+              type="number"
+              placeholder="Duration (minutes)"
+              value={form.duration}
+              onChange={(e) => setForm({ ...form, duration: e.target.value })}
+            />
           </div>
-          <button style={styles.addBtn} onClick={handleSubmit}>Save Test</button>
+          <p style={styles.hint}>
+            Test create hone ke baad "Manage Questions" se Reading/Listening/Writing/Speaking questions add kar sakte ho.
+          </p>
+          <button style={styles.saveBtn} onClick={handleSubmit}>
+            Save Test
+          </button>
         </div>
       )}
 
@@ -79,7 +112,6 @@ export default function Tests() {
         <thead>
           <tr style={styles.thead}>
             <th style={styles.th}>Title</th>
-            <th style={styles.th}>Description</th>
             <th style={styles.th}>Level</th>
             <th style={styles.th}>Duration</th>
             <th style={styles.th}>Questions</th>
@@ -90,12 +122,22 @@ export default function Tests() {
           {tests.map((t) => (
             <tr key={t._id} style={styles.row}>
               <td style={styles.td}>{t.title}</td>
-              <td style={styles.td}>{t.description}</td>
               <td style={styles.td}>{t.level}</td>
               <td style={styles.td}>{t.duration} min</td>
-              <td style={styles.td}>{t.questions.length}</td>
+              <td style={styles.td}>{t.questions?.length || 0}</td>
               <td style={styles.td}>
-                <button style={styles.deleteBtn} onClick={() => handleDelete(t._id)}>Delete</button>
+                <button
+                  style={styles.manageBtn}
+                  onClick={() => navigate(`/tests/${t._id}/questions`)}
+                >
+                  Manage Questions
+                </button>
+                <button
+                  style={styles.deleteBtn}
+                  onClick={() => handleDelete(t._id)}
+                >
+                  Delete
+                </button>
               </td>
             </tr>
           ))}
@@ -106,15 +148,18 @@ export default function Tests() {
 }
 
 const styles = {
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" },
-  addBtn: { padding: "10px 20px", backgroundColor: "#1a1a2e", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" },
-  form: { backgroundColor: "white", padding: "20px", borderRadius: "10px", marginBottom: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" },
-  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "15px" },
-  input: { padding: "10px", borderRadius: "6px", border: "1px solid #ddd", fontSize: "14px" },
-  table: { width: "100%", borderCollapse: "collapse", backgroundColor: "white", borderRadius: "10px", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" },
+  header: { display: "flex", justifyContent: "space-between", marginBottom: "20px" },
+  addBtn: { padding: "10px 15px", backgroundColor: "#1a1a2e", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" },
+  saveBtn: { padding: "12px 20px", backgroundColor: "green", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", marginTop: "10px" },
+  form: { backgroundColor: "white", padding: "20px", borderRadius: "10px", marginBottom: "20px" },
+  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" },
+  input: { padding: "10px", borderRadius: "6px", border: "1px solid #ddd" },
+  hint: { fontSize: "13px", color: "#666", marginTop: "10px" },
+  table: { width: "100%", backgroundColor: "white", borderCollapse: "collapse" },
   thead: { backgroundColor: "#1a1a2e", color: "white" },
-  th: { padding: "12px 15px", textAlign: "left" },
-  td: { padding: "12px 15px" },
+  th: { padding: "10px" },
+  td: { padding: "10px" },
   row: { borderBottom: "1px solid #eee" },
-  deleteBtn: { padding: "6px 12px", backgroundColor: "#e74c3c", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" },
+  manageBtn: { padding: "6px 10px", backgroundColor: "#3498db", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginRight: "8px" },
+  deleteBtn: { padding: "6px 10px", backgroundColor: "red", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" },
 };

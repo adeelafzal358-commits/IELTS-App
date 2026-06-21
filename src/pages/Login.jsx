@@ -24,8 +24,8 @@ export default function Login({ onLogin }) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h2 style={styles.title}>PrimeMock IELTS</h2>
-<p style={styles.subtitle}>Premium Mock Test Platform</p>
+        <h2 style={styles.title}>Prime Mock IELTS</h2>
+        <p style={styles.subtitle}>Premium Mock Test Platform</p>
 
         {error && <p style={styles.error}>{error}</p>}
 
