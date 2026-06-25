@@ -1,11 +1,19 @@
 import { useState, useEffect } from "react";
 import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+
+// Admin Pages
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Candidates from "./pages/Candidates";
 import Tests from "./pages/Tests";
 import TestQuestions from "./pages/TestQuestions";
 import Results from "./pages/Results";
+
+// Student Pages
+import StudentLogin from "./pages/StudentLogin";
+import StudentDashboard from "./pages/StudentDashboard";
+import TestAttempt from "./pages/TestAttempt";
+import StudentResult from "./pages/StudentResult";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -28,6 +36,25 @@ export default function App() {
     setUser(null);
   };
 
+  // ── Student routes ──────────────────────────────
+  const isStudentPath =
+    location.pathname.startsWith("/student") ||
+    location.pathname.startsWith("/attempt") ||
+    location.pathname.startsWith("/my-results");
+
+  if (isStudentPath) {
+    return (
+      <Routes>
+        <Route path="/student/login" element={<StudentLogin />} />
+        <Route path="/student/dashboard" element={<StudentDashboard />} />
+        <Route path="/attempt/:testId" element={<TestAttempt />} />
+        <Route path="/my-results/:attemptId" element={<StudentResult />} />
+        <Route path="/student/*" element={<Navigate to="/student/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // ── Admin routes ────────────────────────────────
   if (!user) {
     return <Login onLogin={handleLogin} />;
   }
