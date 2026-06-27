@@ -1,87 +1,15 @@
 import { useState, useEffect } from "react";
 import API from "../services/api";
 
-export default function Results() {
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchResults();
-  }, []);
-
-  const fetchResults = async () => {
-    try {
-      const res = await API.get("/results");
-      setResults(res.data.data);
-    } catch (err) {
-      console.log(err);
-    }
-    setLoading(false);
-  };
-
-  if (loading) return <p>Loading...</p>;
-
-  return (
-    <div>
-      <div style={styles.header}>
-        <h2>📊 Results</h2>
-      </div>
-
-      <table style={styles.table}>
-        <thead>
-          <tr style={styles.thead}>
-            <th style={styles.th}>Student</th>
-            <th style={styles.th}>Email</th>
-            <th style={styles.th}>Test</th>
-            <th style={styles.th}>Score</th>
-            <th style={styles.th}>Band</th>
-            <th style={styles.th}>Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => (
-            <tr key={r._id} style={styles.row}>
-              <td style={styles.td}>{r.userId?.name || "-"}</td>
-              <td style={styles.td}>{r.userId?.email || "-"}</td>
-              <td style={styles.td}>{r.testId?.title || "-"}</td>
-              <td style={styles.td}>{r.score}/{r.total}</td>
-              <td style={styles.td}>
-                <span style={{
-                  ...styles.band,
-                  backgroundColor: r.band >= 7 ? "#2ecc71" : r.band >= 5 ? "#f39c12" : "#e74c3c"
-                }}>
-                  Band {r.band}
-                </span>
-              </td>
-              <td style={styles.td}>{new Date(r.createdAt).toLocaleDateString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-const styles = {
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" },
-  table: { width: "100%", borderCollapse: "collapse", backgroundColor: "white", borderRadius: "10px", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" },
-  thead: { backgroundColor: "#1a1a2e", color: "white" },
-  th: { padding: "12px 15px", textAlign: "left" },
-  td: { padding: "12px 15px" },
-  row: { borderBottom: "1px solid #eee" },
-  band: { padding: "4px 10px", borderRadius: "20px", color: "white", fontWeight: "bold", fontSize: "12px" },
-};import { useState, useEffect } from "react";
-import API from "../services/api";
-
 const MANUAL_TYPES = ["writing_task1", "writing_task2", "speaking_part1", "speaking_part2_cue_card", "speaking_part3"];
 
 export default function Results() {
-  const [tab, setTab] = useState("pending"); // "pending" | "all"
+  const [tab, setTab] = useState("pending");
   const [pending, setPending] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null); // selected attempt for scoring
-  const [scores, setScores] = useState({}); // { questionId: { score, feedback } }
+  const [selected, setSelected] = useState(null);
+  const [scores, setScores] = useState({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -105,7 +33,6 @@ export default function Results() {
 
   const openScoring = (attempt) => {
     setSelected(attempt);
-    // Pre-fill existing scores
     const prefilled = {};
     attempt.answers?.forEach((ans) => {
       if (MANUAL_TYPES.includes(ans.questionType)) {
@@ -133,15 +60,13 @@ export default function Results() {
         manualScore: Number(scores[questionId]?.score),
         manualFeedback: scores[questionId]?.feedback || "",
       });
-      // Refresh
       const res = await API.get("/attempts/admin/pending");
       setPending(res.data.attempts || []);
-      // Update selected
       const updated = res.data.attempts.find((a) => a._id === selected._id);
       if (updated) {
         setSelected(updated);
       } else {
-        setSelected(null); // scoring complete
+        setSelected(null);
         fetchAll();
       }
     } catch (err) {
@@ -156,13 +81,6 @@ export default function Results() {
     return "📝";
   };
 
-  const getBandColor = (band) => {
-    if (!band) return "#999";
-    if (band >= 7) return "#27ae60";
-    if (band >= 5) return "#f39c12";
-    return "#e74c3c";
-  };
-
   if (loading) return <p style={{ padding: "20px" }}>Loading...</p>;
 
   return (
@@ -170,9 +88,7 @@ export default function Results() {
       <div style={styles.header}>
         <h2>📊 Results & Scoring</h2>
         {pending.length > 0 && (
-          <span style={styles.pendingBadge}>
-            ⏳ {pending.length} Pending
-          </span>
+          <span style={styles.pendingBadge}>⏳ {pending.length} Pending</span>
         )}
       </div>
 
@@ -196,9 +112,7 @@ export default function Results() {
       {tab === "pending" && (
         <div>
           {pending.length === 0 ? (
-            <div style={styles.emptyBox}>
-              ✅ Koi pending scoring nahi hai!
-            </div>
+            <div style={styles.emptyBox}>✅ Koi pending scoring nahi hai!</div>
           ) : (
             <div style={styles.pendingList}>
               {pending.map((attempt) => (
@@ -213,10 +127,7 @@ export default function Results() {
                       })}
                     </p>
                   </div>
-                  <button
-                    style={styles.scoreBtn}
-                    onClick={() => openScoring(attempt)}
-                  >
+                  <button style={styles.scoreBtn} onClick={() => openScoring(attempt)}>
                     Score Now →
                   </button>
                 </div>
@@ -268,9 +179,7 @@ export default function Results() {
             <div style={styles.modalHeader}>
               <div>
                 <h3 style={styles.modalTitle}>Manual Scoring</h3>
-                <p style={styles.modalSub}>
-                  {selected.userId?.name} — {selected.testId?.title}
-                </p>
+                <p style={styles.modalSub}>{selected.userId?.name} — {selected.testId?.title}</p>
               </div>
               <button style={styles.closeBtn} onClick={() => setSelected(null)}>✕</button>
             </div>
@@ -278,7 +187,7 @@ export default function Results() {
             <div style={styles.modalBody}>
               {selected.answers
                 ?.filter((ans) => MANUAL_TYPES.includes(ans.questionType))
-                .map((ans, idx) => (
+                .map((ans) => (
                   <div key={ans.questionId} style={styles.answerBlock}>
                     <div style={styles.answerBlockHeader}>
                       <span style={styles.answerIcon}>{getModuleIcon(ans.questionType)}</span>
@@ -288,7 +197,6 @@ export default function Results() {
                       )}
                     </div>
 
-                    {/* Student Response */}
                     {ans.writingResponse && (
                       <div style={styles.responseBox}>
                         <p style={styles.responseLabel}>Student ka jawab:</p>
@@ -308,7 +216,6 @@ export default function Results() {
                       <p style={styles.noResponse}>⚠️ Student ne koi response nahi diya</p>
                     )}
 
-                    {/* Score Input */}
                     <div style={styles.scoreRow}>
                       <div style={styles.scoreField}>
                         <label style={styles.scoreLabel}>Band Score (1-9):</label>
@@ -331,7 +238,6 @@ export default function Results() {
                       </button>
                     </div>
 
-                    {/* Feedback */}
                     <div style={styles.feedbackField}>
                       <label style={styles.scoreLabel}>Feedback (optional):</label>
                       <textarea
