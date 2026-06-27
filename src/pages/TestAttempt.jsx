@@ -18,6 +18,7 @@ export default function TestAttempt() {
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [activeSectionIdx, setActiveSectionIdx] = useState(0);
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -37,24 +38,20 @@ export default function TestAttempt() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      // Start / resume attempt
       const attemptRes = await axios.post(`${API}/attempts/start`, { testId }, { headers });
       const att = attemptRes.data.attempt;
       setAttempt(att);
 
-      // Fetch test details
       const testsRes = await axios.get(`${API}/tests`, { headers });
       const found = testsRes.data.data.find((t) => t._id === testId);
       setTest(found);
 
-      // Pre-fill saved answers
       const savedAnswers = {};
       att.answers.forEach((a) => {
         savedAnswers[a.questionId] = a.selected || a.writingResponse || a.speakingResponse || "";
       });
       setAnswers(savedAnswers);
 
-      // Timer: minutes remaining
       const elapsed = Math.floor((Date.now() - new Date(att.startedAt).getTime()) / 1000);
       const total = (found?.duration || 60) * 60;
       setTimeLeft(Math.max(0, total - elapsed));
@@ -70,18 +67,45 @@ export default function TestAttempt() {
     return test.questions.filter((q) => q.module === moduleName);
   };
 
+  const getModuleSections = () => {
+    if (!test) return [];
+    return test.sections || [];
+  };
+
+  const getAllSectionQuestions = () => {
+    const sections = getModuleSections();
+    const all = [];
+    sections.forEach((sec) => {
+      (sec.questions || []).forEach((q) => all.push(q));
+    });
+    return all;
+  };
+
   const handleAnswer = (questionId, value) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   };
 
   const autoSave = async () => {
-    if (!attempt) return;
+    if (!attempt || !test) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const currentQs = getModuleQuestions(MODULES[currentModule]);
-      const answersPayload = currentQs.map((q) => ({
+      const currentModuleName = MODULES[currentModule];
+      let questionsToSave = [];
+
+      if (currentModuleName === "reading" || currentModuleName === "listening") {
+        const sections = getModuleSections();
+        if (sections.length > 0) {
+          questionsToSave = getAllSectionQuestions();
+        } else {
+          questionsToSave = getModuleQuestions(currentModuleName);
+        }
+      } else {
+        questionsToSave = getModuleQuestions(currentModuleName);
+      }
+
+      const answersPayload = questionsToSave.map((q) => ({
         questionId: q._id,
-        module: q.module,
+        module: q.module || currentModuleName,
         questionType: q.questionType,
         selected: ["mcq", "true_false_not_given", "matching_headings", "fill_blank", "short_answer"].includes(q.questionType)
           ? answers[q._id] || null : null,
@@ -90,6 +114,7 @@ export default function TestAttempt() {
         speakingResponse: ["speaking_part1", "speaking_part2_cue_card", "speaking_part3"].includes(q.questionType)
           ? answers[q._id] || null : null,
       }));
+
       await axios.post(`${API}/attempts/${attempt._id}/save`, { answers: answersPayload }, { headers });
     } catch (err) {
       console.error("Auto-save failed", err);
@@ -99,12 +124,14 @@ export default function TestAttempt() {
   const handleNextModule = async () => {
     await autoSave();
     setCurrentModule((m) => m + 1);
+    setActiveSectionIdx(0);
     window.scrollTo(0, 0);
   };
 
   const handlePrevModule = async () => {
     await autoSave();
     setCurrentModule((m) => m - 1);
+    setActiveSectionIdx(0);
     window.scrollTo(0, 0);
   };
 
@@ -114,8 +141,8 @@ export default function TestAttempt() {
     setShowConfirm(false);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      // Save all answers first
       const allAnswers = [];
+
       test.questions.forEach((q) => {
         allAnswers.push({
           questionId: q._id,
@@ -129,8 +156,20 @@ export default function TestAttempt() {
             ? answers[q._id] || null : null,
         });
       });
+
+      getAllSectionQuestions().forEach((q) => {
+        allAnswers.push({
+          questionId: q._id,
+          module: q.module || "reading",
+          questionType: q.questionType,
+          selected: ["mcq", "true_false_not_given", "matching_headings", "fill_blank", "short_answer"].includes(q.questionType)
+            ? answers[q._id] || null : null,
+          writingResponse: null,
+          speakingResponse: null,
+        });
+      });
+
       await axios.post(`${API}/attempts/${attempt._id}/save`, { answers: allAnswers }, { headers });
-      // Submit
       const res = await axios.post(`${API}/attempts/${attempt._id}/submit`, {}, { headers });
       navigate(`/my-results/${res.data.attempt._id}`);
     } catch (err) {
@@ -153,20 +192,13 @@ export default function TestAttempt() {
     return "#27ae60";
   };
 
-  // ── Question Renderers ──────────────────────────
-
+  // ── Question Renderers ──
   const renderMCQ = (q) => (
     <div style={styles.optionsList}>
       {q.options.map((opt, i) => (
         <label key={i} style={{ ...styles.optionLabel, ...(answers[q._id] === opt ? styles.optionSelected : {}) }}>
-          <input
-            type="radio"
-            name={q._id}
-            value={opt}
-            checked={answers[q._id] === opt}
-            onChange={() => handleAnswer(q._id, opt)}
-            style={{ marginRight: "10px" }}
-          />
+          <input type="radio" name={q._id} value={opt} checked={answers[q._id] === opt}
+            onChange={() => handleAnswer(q._id, opt)} style={{ marginRight: "10px" }} />
           {opt}
         </label>
       ))}
@@ -177,14 +209,8 @@ export default function TestAttempt() {
     <div style={styles.optionsList}>
       {["True", "False", "Not Given"].map((opt) => (
         <label key={opt} style={{ ...styles.optionLabel, ...(answers[q._id] === opt ? styles.optionSelected : {}) }}>
-          <input
-            type="radio"
-            name={q._id}
-            value={opt}
-            checked={answers[q._id] === opt}
-            onChange={() => handleAnswer(q._id, opt)}
-            style={{ marginRight: "10px" }}
-          />
+          <input type="radio" name={q._id} value={opt} checked={answers[q._id] === opt}
+            onChange={() => handleAnswer(q._id, opt)} style={{ marginRight: "10px" }} />
           {opt}
         </label>
       ))}
@@ -192,24 +218,14 @@ export default function TestAttempt() {
   );
 
   const renderFillBlank = (q) => (
-    <input
-      style={styles.textInput}
-      type="text"
-      placeholder="Apna jawab likhein..."
-      value={answers[q._id] || ""}
-      onChange={(e) => handleAnswer(q._id, e.target.value)}
-    />
+    <input style={styles.textInput} type="text" placeholder="Answer likhein..."
+      value={answers[q._id] || ""} onChange={(e) => handleAnswer(q._id, e.target.value)} />
   );
 
   const renderWriting = (q) => (
     <div>
-      <textarea
-        style={styles.textarea}
-        placeholder="Apna essay yahan likhein..."
-        value={answers[q._id] || ""}
-        onChange={(e) => handleAnswer(q._id, e.target.value)}
-        rows={12}
-      />
+      <textarea style={styles.textarea} placeholder="Essay yahan likhein..."
+        value={answers[q._id] || ""} onChange={(e) => handleAnswer(q._id, e.target.value)} rows={12} />
       <div style={styles.wordCount}>
         Words: {(answers[q._id] || "").trim().split(/\s+/).filter(Boolean).length}
         {q.wordLimit ? ` / ${q.wordLimit} minimum` : ""}
@@ -220,31 +236,21 @@ export default function TestAttempt() {
   const renderSpeaking = (q) => (
     <div>
       <div style={styles.speakingInfo}>
-        <span>⏱ Prep time: {q.prepTimeSeconds || 60}s</span>
-        <span>🎤 Speaking time: {q.speakingTimeSeconds || 120}s</span>
+        <span>⏱ Prep: {q.prepTimeSeconds || 60}s</span>
+        <span>🎤 Speaking: {q.speakingTimeSeconds || 120}s</span>
       </div>
-      <textarea
-        style={styles.textarea}
-        placeholder="Speaking notes yahan likhein (optional)..."
-        value={answers[q._id] || ""}
-        onChange={(e) => handleAnswer(q._id, e.target.value)}
-        rows={6}
-      />
+      <textarea style={styles.textarea} placeholder="Notes (optional)..."
+        value={answers[q._id] || ""} onChange={(e) => handleAnswer(q._id, e.target.value)} rows={6} />
     </div>
   );
 
   const renderQuestion = (q, idx) => {
     const typeLabel = {
-      mcq: "Multiple Choice",
-      true_false_not_given: "True / False / Not Given",
-      matching_headings: "Matching Headings",
-      fill_blank: "Fill in the Blank",
-      short_answer: "Short Answer",
-      writing_task1: "Writing Task 1",
-      writing_task2: "Writing Task 2",
-      speaking_part1: "Speaking Part 1",
-      speaking_part2_cue_card: "Speaking Part 2 — Cue Card",
-      speaking_part3: "Speaking Part 3",
+      mcq: "Multiple Choice", true_false_not_given: "True / False / Not Given",
+      matching_headings: "Matching Headings", fill_blank: "Fill in the Blank",
+      short_answer: "Short Answer", writing_task1: "Writing Task 1",
+      writing_task2: "Writing Task 2", speaking_part1: "Speaking Part 1",
+      speaking_part2_cue_card: "Speaking Part 2", speaking_part3: "Speaking Part 3",
     }[q.questionType] || q.questionType;
 
     return (
@@ -254,46 +260,24 @@ export default function TestAttempt() {
           <span style={styles.qType}>{typeLabel}</span>
           <span style={styles.qMarks}>{q.marks || 1} mark</span>
         </div>
-
-        {/* Passage */}
-        {q.passage && (
-          <div style={styles.passage}>
-            <strong style={{ display: "block", marginBottom: "8px", color: "#555" }}>📖 Reading Passage:</strong>
-            {q.passage}
-          </div>
-        )}
-
-        {/* Audio */}
         {q.audioUrl && (
           <div style={styles.mediaBox}>
-            <span>🔊 Audio:</span>
-            <a href={q.audioUrl} target="_blank" rel="noreferrer" style={styles.mediaLink}>
-              Play Audio
-            </a>
+            <span>🔊</span>
+            <a href={q.audioUrl} target="_blank" rel="noreferrer" style={styles.mediaLink}>Play Audio</a>
           </div>
         )}
-
-        {/* Image */}
         {q.imageUrl && (
           <div style={styles.mediaBox}>
-            <span>🖼 Image:</span>
-            <a href={q.imageUrl} target="_blank" rel="noreferrer" style={styles.mediaLink}>
-              View Image
-            </a>
+            <span>🖼</span>
+            <a href={q.imageUrl} target="_blank" rel="noreferrer" style={styles.mediaLink}>View Image</a>
           </div>
         )}
-
-        {/* Question text */}
         <p style={styles.questionText}>{q.question}</p>
-
-        {/* Cue card points */}
         {q.cueCardPoints?.length > 0 && (
           <ul style={styles.cueList}>
             {q.cueCardPoints.map((pt, i) => <li key={i}>{pt}</li>)}
           </ul>
         )}
-
-        {/* Answer input */}
         {["mcq", "matching_headings"].includes(q.questionType) && renderMCQ(q)}
         {q.questionType === "true_false_not_given" && renderTrueFalse(q)}
         {["fill_blank", "short_answer"].includes(q.questionType) && renderFillBlank(q)}
@@ -303,90 +287,190 @@ export default function TestAttempt() {
     );
   };
 
+  // ── Reading Split Screen ──
+  const renderReadingModule = () => {
+    const sections = getModuleSections();
+
+    // ── Sections wala data hai ──
+    if (sections.length > 0) {
+      const section = sections[activeSectionIdx];
+      const sectionQuestions = section?.questions || [];
+      const answered = sectionQuestions.filter((q) => answers[q._id]).length;
+
+      return (
+        <div>
+          {sections.length > 1 && (
+            <div style={styles.sectionTabs}>
+              {sections.map((sec, i) => (
+                <button key={sec._id}
+                  style={{ ...styles.sectionTab, ...(i === activeSectionIdx ? styles.sectionTabActive : {}) }}
+                  onClick={() => setActiveSectionIdx(i)}>
+                  Section {i + 1}{sec.passageTitle ? ` — ${sec.passageTitle.substring(0, 20)}` : ""}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={styles.splitScreen}>
+            <div style={styles.passagePanel}>
+              <div style={styles.passagePanelHeader}>
+                <span style={styles.passagePanelTitle}>📖 {section.passageTitle || `Section ${activeSectionIdx + 1}`}</span>
+                <span style={styles.passageProgress}>{answered}/{sectionQuestions.length} answered</span>
+              </div>
+              <div style={styles.passageText}>{section.passage}</div>
+            </div>
+            <div style={styles.questionsPanel}>
+              <div style={styles.questionsPanelHeader}>
+                <span style={styles.questionsPanelTitle}>Questions</span>
+              </div>
+              <div style={styles.questionsList}>
+                {sectionQuestions.length === 0 ? (
+                  <div style={styles.emptyModule}>Koi question nahi.</div>
+                ) : (
+                  sectionQuestions.map((q, idx) => renderQuestion(q, idx))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Fallback: Flat questions se groups banao ──
+    const flatQuestions = getModuleQuestions("reading");
+    if (flatQuestions.length === 0) {
+      return <div style={styles.emptyModule}>Reading questions nahi hain.</div>;
+    }
+
+    const groups = [];
+    let currentGroup = null;
+    flatQuestions.forEach((q) => {
+      if (!currentGroup || (q.passage && q.passage !== currentGroup.passage)) {
+        currentGroup = { passage: q.passage || "", questions: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.questions.push(q);
+    });
+
+    const group = groups[activeSectionIdx] || groups[0];
+    const answered = (group?.questions || []).filter((q) => answers[q._id]).length;
+
+    return (
+      <div>
+        {groups.length > 1 && (
+          <div style={styles.sectionTabs}>
+            {groups.map((g, i) => (
+              <button key={i}
+                style={{ ...styles.sectionTab, ...(i === activeSectionIdx ? styles.sectionTabActive : {}) }}
+                onClick={() => setActiveSectionIdx(i)}>
+                Passage {i + 1}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={styles.splitScreen}>
+          <div style={styles.passagePanel}>
+            <div style={styles.passagePanelHeader}>
+              <span style={styles.passagePanelTitle}>📖 Reading Passage</span>
+              <span style={styles.passageProgress}>{answered}/{group?.questions?.length || 0} answered</span>
+            </div>
+            <div style={styles.passageText}>
+              {group?.passage || "Koi passage nahi hai."}
+            </div>
+          </div>
+          <div style={styles.questionsPanel}>
+            <div style={styles.questionsPanelHeader}>
+              <span style={styles.questionsPanelTitle}>Questions</span>
+            </div>
+            <div style={styles.questionsList}>
+              {(group?.questions || []).map((q, idx) => renderQuestion(q, idx))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) return <div style={styles.loadingPage}>Loading test...</div>;
   if (!test) return <div style={styles.loadingPage}>Test nahi mila</div>;
 
   const currentModuleName = MODULES[currentModule];
   const currentQuestions = getModuleQuestions(currentModuleName);
-  const answeredCount = currentQuestions.filter((q) => answers[q._id]).length;
   const isLastModule = currentModule === MODULES.length - 1;
+  const isReading = currentModuleName === "reading";
+
+  const sections = getModuleSections();
+  const answeredCount = isReading
+    ? sections.length > 0
+      ? getAllSectionQuestions().filter((q) => answers[q._id]).length
+      : currentQuestions.filter((q) => answers[q._id]).length
+    : currentQuestions.filter((q) => answers[q._id]).length;
+
+  const totalCount = isReading
+    ? sections.length > 0
+      ? getAllSectionQuestions().length
+      : currentQuestions.length
+    : currentQuestions.length;
 
   return (
     <div style={styles.page}>
       {/* Top Bar */}
       <div style={styles.topBar}>
-        <div style={styles.testInfo}>
-          <span style={styles.testName}>📝 {test.title}</span>
-        </div>
-        <div style={styles.timerBox} style={{ ...styles.timerBox, borderColor: getTimerColor() }}>
+        <span style={styles.testName}>📝 {test.title}</span>
+        <div style={{ ...styles.timerBox, borderColor: getTimerColor() }}>
           <span style={{ color: getTimerColor(), fontWeight: "700", fontSize: "20px" }}>
             ⏱ {formatTime(timeLeft)}
           </span>
         </div>
-        <button style={styles.submitTopBtn} onClick={() => setShowConfirm(true)}>
-          Submit Test
-        </button>
+        <button style={styles.submitTopBtn} onClick={() => setShowConfirm(true)}>Submit Test</button>
       </div>
 
       {/* Module Tabs */}
       <div style={styles.moduleTabs}>
         {MODULES.map((mod, i) => {
-          const modQs = getModuleQuestions(mod);
+          const isRd = mod === "reading";
+          const modQs = isRd && sections.length > 0
+            ? getAllSectionQuestions()
+            : getModuleQuestions(mod);
           const modAnswered = modQs.filter((q) => answers[q._id]).length;
           return (
-            <button
-              key={mod}
-              style={{
-                ...styles.moduleTab,
-                ...(i === currentModule ? styles.moduleTabActive : {}),
-                ...(modQs.length === 0 ? styles.moduleTabEmpty : {}),
-              }}
-              onClick={async () => { await autoSave(); setCurrentModule(i); window.scrollTo(0, 0); }}
-            >
+            <button key={mod}
+              style={{ ...styles.moduleTab, ...(i === currentModule ? styles.moduleTabActive : {}) }}
+              onClick={async () => { await autoSave(); setCurrentModule(i); setActiveSectionIdx(0); window.scrollTo(0, 0); }}>
               {mod.charAt(0).toUpperCase() + mod.slice(1)}
-              {modQs.length > 0 && (
-                <span style={styles.modProgress}> {modAnswered}/{modQs.length}</span>
-              )}
+              {modQs.length > 0 && <span style={styles.modProgress}> {modAnswered}/{modQs.length}</span>}
             </button>
           );
         })}
       </div>
 
-      {/* Questions */}
-      <div style={styles.content}>
-        <div style={styles.moduleHeader}>
-          <h3 style={styles.moduleTitle}>
-            {currentModuleName.charAt(0).toUpperCase() + currentModuleName.slice(1)} Section
-          </h3>
-          <span style={styles.progressText}>
-            {answeredCount} / {currentQuestions.length} answered
-          </span>
-        </div>
+      {/* Module Header */}
+      <div style={styles.moduleHeaderBar}>
+        <h3 style={styles.moduleTitle}>
+          {currentModuleName.charAt(0).toUpperCase() + currentModuleName.slice(1)} Section
+        </h3>
+        <span style={styles.progressText}>{answeredCount} / {totalCount} answered</span>
+      </div>
 
-        {currentQuestions.length === 0 ? (
-          <div style={styles.emptyModule}>
-            Is module mein koi question nahi hai
-          </div>
-        ) : (
-          currentQuestions.map((q, idx) => renderQuestion(q, idx))
+      {/* Content */}
+      <div style={isReading ? styles.fullWidth : styles.content}>
+        {isReading ? renderReadingModule() : (
+          currentQuestions.length === 0 ? (
+            <div style={styles.emptyModule}>Is module mein koi question nahi.</div>
+          ) : (
+            currentQuestions.map((q, idx) => renderQuestion(q, idx))
+          )
         )}
 
         {/* Navigation */}
-        <div style={styles.navRow}>
+        <div style={{ ...styles.navRow, ...(isReading ? { padding: "16px 24px" } : {}) }}>
           {currentModule > 0 && (
-            <button style={styles.prevBtn} onClick={handlePrevModule}>
-              ← Previous
-            </button>
+            <button style={styles.prevBtn} onClick={handlePrevModule}>← Previous</button>
           )}
           <div style={{ flex: 1 }} />
           {!isLastModule ? (
-            <button style={styles.nextBtn} onClick={handleNextModule}>
-              Next Section →
-            </button>
+            <button style={styles.nextBtn} onClick={handleNextModule}>Next Section →</button>
           ) : (
-            <button style={styles.submitBtn} onClick={() => setShowConfirm(true)}>
-              Submit Test ✓
-            </button>
+            <button style={styles.submitBtn} onClick={() => setShowConfirm(true)}>Submit Test ✓</button>
           )}
         </div>
       </div>
@@ -396,18 +480,11 @@ export default function TestAttempt() {
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Test Submit karna chahte ho?</h3>
-            <p style={styles.modalText}>
-              Ek dafa submit karne ke baad wapis nahi aa sakte.
-            </p>
+            <p style={styles.modalText}>Ek dafa submit ke baad wapis nahi aa sakte.</p>
             <div style={styles.modalBtns}>
-              <button style={styles.cancelBtn} onClick={() => setShowConfirm(false)}>
-                Cancel
-              </button>
-              <button
-                style={submitting ? styles.submitBtnDisabled : styles.confirmBtn}
-                onClick={handleSubmit}
-                disabled={submitting}
-              >
+              <button style={styles.cancelBtn} onClick={() => setShowConfirm(false)}>Cancel</button>
+              <button style={submitting ? styles.submitBtnDisabled : styles.confirmBtn}
+                onClick={handleSubmit} disabled={submitting}>
                 {submitting ? "Submitting..." : "Yes, Submit"}
               </button>
             </div>
@@ -422,37 +499,48 @@ const styles = {
   page: { minHeight: "100vh", backgroundColor: "#f0f4f8" },
   loadingPage: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", color: "#888" },
   topBar: { backgroundColor: "#1a1a2e", color: "white", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 },
-  testInfo: { flex: 1 },
-  testName: { fontSize: "15px", fontWeight: "600" },
+  testName: { fontSize: "15px", fontWeight: "600", flex: 1 },
   timerBox: { border: "2px solid", borderRadius: "10px", padding: "6px 16px", margin: "0 20px" },
   submitTopBtn: { padding: "8px 16px", backgroundColor: "#e74c3c", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
   moduleTabs: { display: "flex", backgroundColor: "white", borderBottom: "2px solid #e0e0e0", padding: "0 24px" },
   moduleTab: { padding: "12px 20px", border: "none", backgroundColor: "transparent", cursor: "pointer", fontSize: "14px", color: "#666", borderBottom: "3px solid transparent", marginBottom: "-2px" },
   moduleTabActive: { color: "#1a1a2e", borderBottom: "3px solid #1a1a2e", fontWeight: "700" },
-  moduleTabEmpty: { opacity: 0.4 },
   modProgress: { fontSize: "12px", color: "#3498db" },
+  moduleHeaderBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", backgroundColor: "white", borderBottom: "1px solid #e0e0e0" },
+  moduleTitle: { margin: 0, fontSize: "18px", fontWeight: "700", color: "#1a1a2e" },
+  progressText: { fontSize: "13px", color: "#888", backgroundColor: "#f0f4f8", padding: "6px 12px", borderRadius: "20px" },
+  fullWidth: { width: "100%" },
+  splitScreen: { display: "flex", height: "calc(100vh - 165px)", overflow: "hidden" },
+  passagePanel: { width: "50%", borderRight: "2px solid #e0e0e0", display: "flex", flexDirection: "column", backgroundColor: "white" },
+  passagePanelHeader: { padding: "14px 20px", backgroundColor: "#1a1a2e", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
+  passagePanelTitle: { color: "white", fontWeight: "700", fontSize: "14px" },
+  passageProgress: { color: "#94a3b8", fontSize: "12px" },
+  passageText: { flex: 1, overflowY: "auto", padding: "20px", fontSize: "14px", lineHeight: "1.9", color: "#333", whiteSpace: "pre-line" },
+  questionsPanel: { width: "50%", display: "flex", flexDirection: "column", backgroundColor: "#f8f9fa" },
+  questionsPanelHeader: { padding: "14px 20px", backgroundColor: "#2563eb", flexShrink: 0 },
+  questionsPanelTitle: { color: "white", fontWeight: "700", fontSize: "14px" },
+  questionsList: { flex: 1, overflowY: "auto", padding: "16px" },
+  sectionTabs: { display: "flex", backgroundColor: "#f0f4f8", padding: "10px 24px", gap: "10px", borderBottom: "1px solid #e0e0e0" },
+  sectionTab: { padding: "8px 16px", border: "1px solid #ddd", backgroundColor: "white", borderRadius: "20px", cursor: "pointer", fontSize: "13px", color: "#666" },
+  sectionTabActive: { backgroundColor: "#1a1a2e", color: "white", border: "1px solid #1a1a2e", fontWeight: "600" },
   content: { maxWidth: "800px", margin: "0 auto", padding: "24px 20px" },
-  moduleHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" },
-  moduleTitle: { margin: 0, fontSize: "20px", fontWeight: "700", color: "#1a1a2e" },
-  progressText: { fontSize: "13px", color: "#888", backgroundColor: "white", padding: "6px 12px", borderRadius: "20px" },
-  emptyModule: { textAlign: "center", padding: "60px", color: "#aaa", backgroundColor: "white", borderRadius: "12px" },
-  questionCard: { backgroundColor: "white", borderRadius: "12px", padding: "24px", marginBottom: "16px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  emptyModule: { textAlign: "center", padding: "60px", color: "#aaa", backgroundColor: "white", borderRadius: "12px", margin: "20px" },
+  questionCard: { backgroundColor: "white", borderRadius: "10px", padding: "20px", marginBottom: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" },
   questionHeader: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" },
   qNum: { backgroundColor: "#1a1a2e", color: "white", borderRadius: "6px", padding: "3px 10px", fontSize: "13px", fontWeight: "700" },
   qType: { backgroundColor: "#eef2ff", color: "#3498db", borderRadius: "6px", padding: "3px 10px", fontSize: "12px" },
   qMarks: { marginLeft: "auto", fontSize: "12px", color: "#888" },
-  passage: { backgroundColor: "#f8f9fa", border: "1px solid #e0e0e0", borderRadius: "8px", padding: "16px", marginBottom: "16px", fontSize: "14px", lineHeight: "1.7", color: "#444" },
-  mediaBox: { display: "flex", alignItems: "center", gap: "10px", backgroundColor: "#fff8e1", padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", fontSize: "14px" },
+  mediaBox: { display: "flex", alignItems: "center", gap: "10px", backgroundColor: "#fff8e1", padding: "8px 12px", borderRadius: "8px", marginBottom: "10px", fontSize: "14px" },
   mediaLink: { color: "#3498db", textDecoration: "none", fontWeight: "600" },
-  questionText: { fontSize: "15px", color: "#1a1a2e", lineHeight: "1.6", marginBottom: "16px", whiteSpace: "pre-line" },
-  cueList: { backgroundColor: "#f0f4f8", padding: "12px 12px 12px 28px", borderRadius: "8px", marginBottom: "14px", fontSize: "14px", color: "#444", lineHeight: "1.8" },
-  optionsList: { display: "flex", flexDirection: "column", gap: "10px" },
-  optionLabel: { display: "flex", alignItems: "center", padding: "12px 16px", border: "2px solid #e0e0e0", borderRadius: "8px", cursor: "pointer", fontSize: "14px", transition: "all 0.2s" },
+  questionText: { fontSize: "15px", color: "#1a1a2e", lineHeight: "1.6", marginBottom: "14px", whiteSpace: "pre-line" },
+  cueList: { backgroundColor: "#f0f4f8", padding: "10px 10px 10px 24px", borderRadius: "8px", marginBottom: "12px", fontSize: "14px", color: "#444", lineHeight: "1.8" },
+  optionsList: { display: "flex", flexDirection: "column", gap: "8px" },
+  optionLabel: { display: "flex", alignItems: "center", padding: "10px 14px", border: "2px solid #e0e0e0", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
   optionSelected: { border: "2px solid #1a1a2e", backgroundColor: "#f0f4ff" },
-  textInput: { width: "100%", padding: "12px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
-  textarea: { width: "100%", padding: "14px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", outline: "none", resize: "vertical", boxSizing: "border-box", lineHeight: "1.6" },
+  textInput: { width: "100%", padding: "10px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
+  textarea: { width: "100%", padding: "12px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", outline: "none", resize: "vertical", boxSizing: "border-box", lineHeight: "1.6" },
   wordCount: { textAlign: "right", fontSize: "12px", color: "#888", marginTop: "6px" },
-  speakingInfo: { display: "flex", gap: "16px", backgroundColor: "#e8f5e9", padding: "10px 14px", borderRadius: "8px", marginBottom: "12px", fontSize: "13px", color: "#27ae60" },
+  speakingInfo: { display: "flex", gap: "16px", backgroundColor: "#e8f5e9", padding: "10px 14px", borderRadius: "8px", marginBottom: "10px", fontSize: "13px", color: "#27ae60" },
   navRow: { display: "flex", alignItems: "center", marginTop: "24px", gap: "12px" },
   prevBtn: { padding: "12px 24px", backgroundColor: "white", color: "#1a1a2e", border: "2px solid #1a1a2e", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "600" },
   nextBtn: { padding: "12px 24px", backgroundColor: "#1a1a2e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "600" },
