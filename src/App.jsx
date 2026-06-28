@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import WritingExam from "./components/WritingExam"; // Apni file ka sahi path check karlein
 
 // Admin Pages
 import Login from "./pages/Login";
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/attempt/:testId" element={<TestAttempt />} />
         <Route path="/my-results/:attemptId" element={<StudentResult />} />
         <Route path="/student/*" element={<Navigate to="/student/login" replace />} />
+      <Route path="/exam/:testId/writing" element={<WritingExam />} />
       </Routes>
     );
   }
