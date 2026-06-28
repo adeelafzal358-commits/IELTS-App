@@ -62,20 +62,22 @@ export default function TestAttempt() {
     }
   };
 
+  // Flat questions (listening/writing/speaking)
   const getModuleQuestions = (moduleName) => {
     if (!test) return [];
     return test.questions.filter((q) => q.module === moduleName);
   };
 
-  const getModuleSections = () => {
+  // Sections (sirf Reading ke liye)
+  const getReadingSections = () => {
     if (!test) return [];
     return test.sections || [];
   };
 
+  // All section questions for submit
   const getAllSectionQuestions = () => {
-    const sections = getModuleSections();
     const all = [];
-    sections.forEach((sec) => {
+    getReadingSections().forEach((sec) => {
       (sec.questions || []).forEach((q) => all.push(q));
     });
     return all;
@@ -92,13 +94,9 @@ export default function TestAttempt() {
       const currentModuleName = MODULES[currentModule];
       let questionsToSave = [];
 
-      if (currentModuleName === "reading" || currentModuleName === "listening") {
-        const sections = getModuleSections();
-        if (sections.length > 0) {
-          questionsToSave = getAllSectionQuestions();
-        } else {
-          questionsToSave = getModuleQuestions(currentModuleName);
-        }
+      if (currentModuleName === "reading") {
+        const sections = getReadingSections();
+        questionsToSave = sections.length > 0 ? getAllSectionQuestions() : getModuleQuestions("reading");
       } else {
         questionsToSave = getModuleQuestions(currentModuleName);
       }
@@ -143,6 +141,7 @@ export default function TestAttempt() {
       const headers = { Authorization: `Bearer ${token}` };
       const allAnswers = [];
 
+      // Flat questions (listening/writing/speaking)
       test.questions.forEach((q) => {
         allAnswers.push({
           questionId: q._id,
@@ -157,6 +156,7 @@ export default function TestAttempt() {
         });
       });
 
+      // Reading section questions
       getAllSectionQuestions().forEach((q) => {
         allAnswers.push({
           questionId: q._id,
@@ -289,9 +289,8 @@ export default function TestAttempt() {
 
   // ── Reading Split Screen ──
   const renderReadingModule = () => {
-    const sections = getModuleSections();
+    const sections = getReadingSections();
 
-    // ── Sections wala data hai ──
     if (sections.length > 0) {
       const section = sections[activeSectionIdx];
       const sectionQuestions = section?.questions || [];
@@ -305,7 +304,7 @@ export default function TestAttempt() {
                 <button key={sec._id}
                   style={{ ...styles.sectionTab, ...(i === activeSectionIdx ? styles.sectionTabActive : {}) }}
                   onClick={() => setActiveSectionIdx(i)}>
-                  Section {i + 1}{sec.passageTitle ? ` — ${sec.passageTitle.substring(0, 20)}` : ""}
+                  Section {i + 1}{sec.passageTitle ? ` — ${sec.passageTitle.substring(0, 25)}` : ""}
                 </button>
               ))}
             </div>
@@ -335,7 +334,7 @@ export default function TestAttempt() {
       );
     }
 
-    // ── Fallback: Flat questions se groups banao ──
+    // Fallback: flat questions
     const flatQuestions = getModuleQuestions("reading");
     if (flatQuestions.length === 0) {
       return <div style={styles.emptyModule}>Reading questions nahi hain.</div>;
@@ -373,9 +372,7 @@ export default function TestAttempt() {
               <span style={styles.passagePanelTitle}>📖 Reading Passage</span>
               <span style={styles.passageProgress}>{answered}/{group?.questions?.length || 0} answered</span>
             </div>
-            <div style={styles.passageText}>
-              {group?.passage || "Koi passage nahi hai."}
-            </div>
+            <div style={styles.passageText}>{group?.passage || "Koi passage nahi."}</div>
           </div>
           <div style={styles.questionsPanel}>
             <div style={styles.questionsPanelHeader}>
@@ -390,15 +387,29 @@ export default function TestAttempt() {
     );
   };
 
+  // ── Listening Module ──
+  const renderListeningModule = () => {
+    const questions = getModuleQuestions("listening");
+    if (questions.length === 0) {
+      return <div style={styles.emptyModule}>Listening questions nahi hain.</div>;
+    }
+    return (
+      <div style={styles.content}>
+        {questions.map((q, idx) => renderQuestion(q, idx))}
+      </div>
+    );
+  };
+
   if (loading) return <div style={styles.loadingPage}>Loading test...</div>;
   if (!test) return <div style={styles.loadingPage}>Test nahi mila</div>;
 
   const currentModuleName = MODULES[currentModule];
-  const currentQuestions = getModuleQuestions(currentModuleName);
-  const isLastModule = currentModule === MODULES.length - 1;
   const isReading = currentModuleName === "reading";
+  const isLastModule = currentModule === MODULES.length - 1;
 
-  const sections = getModuleSections();
+  const sections = getReadingSections();
+  const currentQuestions = getModuleQuestions(currentModuleName);
+
   const answeredCount = isReading
     ? sections.length > 0
       ? getAllSectionQuestions().filter((q) => answers[q._id]).length
@@ -406,9 +417,7 @@ export default function TestAttempt() {
     : currentQuestions.filter((q) => answers[q._id]).length;
 
   const totalCount = isReading
-    ? sections.length > 0
-      ? getAllSectionQuestions().length
-      : currentQuestions.length
+    ? sections.length > 0 ? getAllSectionQuestions().length : currentQuestions.length
     : currentQuestions.length;
 
   return (
@@ -452,28 +461,35 @@ export default function TestAttempt() {
       </div>
 
       {/* Content */}
-      <div style={isReading ? styles.fullWidth : styles.content}>
-        {isReading ? renderReadingModule() : (
-          currentQuestions.length === 0 ? (
-            <div style={styles.emptyModule}>Is module mein koi question nahi.</div>
-          ) : (
-            currentQuestions.map((q, idx) => renderQuestion(q, idx))
-          )
-        )}
-
-        {/* Navigation */}
-        <div style={{ ...styles.navRow, ...(isReading ? { padding: "16px 24px" } : {}) }}>
-          {currentModule > 0 && (
-            <button style={styles.prevBtn} onClick={handlePrevModule}>← Previous</button>
-          )}
-          <div style={{ flex: 1 }} />
-          {!isLastModule ? (
-            <button style={styles.nextBtn} onClick={handleNextModule}>Next Section →</button>
-          ) : (
-            <button style={styles.submitBtn} onClick={() => setShowConfirm(true)}>Submit Test ✓</button>
-          )}
+      {isReading ? (
+        <div style={styles.fullWidth}>
+          {renderReadingModule()}
+          <div style={{ ...styles.navRow, padding: "16px 24px" }}>
+            {currentModule > 0 && <button style={styles.prevBtn} onClick={handlePrevModule}>← Previous</button>}
+            <div style={{ flex: 1 }} />
+            {!isLastModule
+              ? <button style={styles.nextBtn} onClick={handleNextModule}>Next Section →</button>
+              : <button style={styles.submitBtn} onClick={() => setShowConfirm(true)}>Submit Test ✓</button>
+            }
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={styles.content}>
+          {currentModuleName === "listening" ? renderListeningModule() : (
+            currentQuestions.length === 0
+              ? <div style={styles.emptyModule}>Is module mein koi question nahi.</div>
+              : currentQuestions.map((q, idx) => renderQuestion(q, idx))
+          )}
+          <div style={styles.navRow}>
+            {currentModule > 0 && <button style={styles.prevBtn} onClick={handlePrevModule}>← Previous</button>}
+            <div style={{ flex: 1 }} />
+            {!isLastModule
+              ? <button style={styles.nextBtn} onClick={handleNextModule}>Next Section →</button>
+              : <button style={styles.submitBtn} onClick={() => setShowConfirm(true)}>Submit Test ✓</button>
+            }
+          </div>
+        </div>
+      )}
 
       {/* Confirm Modal */}
       {showConfirm && (
